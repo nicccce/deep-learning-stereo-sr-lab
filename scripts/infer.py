@@ -8,7 +8,7 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from stereo_sr_lab.data import StereoSRDataset, build_pairs
+from stereo_sr_lab.data import StereoSRDataset, build_pairs_from_source
 from stereo_sr_lab.data.image_io import pil_to_tensor, read_rgb, save_tensor_image
 from stereo_sr_lab.models import create_model
 from stereo_sr_lab.training.utils import get_device, load_checkpoint, load_config
@@ -56,10 +56,22 @@ def main() -> None:
         save_tensor_image(sr_right, out_dir / "sr_right.png")
         return
 
-    data_root = args.data_root or config["data"]["root"]
-    dataset_name = args.dataset or config["data"]["dataset"]
-    split = args.split or config["data"].get("val_split", "Validation")
-    pairs = build_pairs(data_root, dataset_name, split)
+    data_cfg = config["data"]
+    source = dict(
+        data_cfg.get("test_source")
+        or {
+            "dataset": data_cfg["dataset"],
+            "root": data_cfg["root"],
+            "split": data_cfg.get("val_split", "Validation"),
+        }
+    )
+    if args.data_root:
+        source["root"] = args.data_root
+    if args.dataset:
+        source["dataset"] = args.dataset
+    if args.split:
+        source["split"] = args.split
+    pairs = build_pairs_from_source(source)
     if args.limit:
         pairs = pairs[: args.limit]
     dataset = StereoSRDataset(pairs, scale=config["data"]["scale"], split="eval")

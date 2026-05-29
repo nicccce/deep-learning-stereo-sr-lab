@@ -64,9 +64,10 @@ def main() -> None:
 
     if "kitti" in args.only:
         extract_if_needed(
-            data_root / "kitti" / "data_depth_selection.zip",
+            data_root / "kitti" / "data_stereo_flow.zip",
             out_root / "kitti",
             force=args.force,
+            marker_name=".data_stereo_flow.extracted",
         )
 
 

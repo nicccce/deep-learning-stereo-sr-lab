@@ -2,10 +2,24 @@
   "experiment_name": "mono_sr_x2_ablation",
   "seed": 42,
   "data": {
-    "dataset": "flickr1024",
-    "root": "datasets/flickr1024/Flickr1024",
-    "train_split": "Train",
-    "val_split": "Validation",
+    "train_sources": [
+      {
+        "dataset": "flickr1024",
+        "root": "datasets/flickr1024/Flickr1024",
+        "split": "all"
+      },
+      {
+        "dataset": "middlebury2014",
+        "root": "datasets/middlebury_2014/perfect_train"
+      }
+    ],
+    "test_source": {
+      "dataset": "kitti2012",
+      "root": "datasets/kitti",
+      "split": "all"
+    },
+    "val_ratio": 0.1,
+    "split_seed": 42,
     "scale": 2,
     "hr_patch_size": 128,
     "eval_crop_size": 512,

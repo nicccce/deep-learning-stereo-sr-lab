@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from stereo_sr_lab.data import StereoSRDataset, build_pairs
+from stereo_sr_lab.data import StereoSRDataset, build_pairs, build_pairs_from_sources, split_pairs
 from stereo_sr_lab.models import count_parameters, create_model
 from stereo_sr_lab.training.engine import evaluate_model, train_one_epoch
 from stereo_sr_lab.training.losses import StereoSRLoss
@@ -35,6 +35,24 @@ def override(config: dict, args) -> None:
         config["data"]["limit_val"] = args.limit_val
 
 
+def make_train_val_pairs(config: dict) -> tuple[list, list]:
+    data_cfg = config["data"]
+    if "train_sources" in data_cfg:
+        pairs = build_pairs_from_sources(data_cfg["train_sources"])
+        if not pairs:
+            raise RuntimeError("No training pairs found in configured train_sources.")
+        return split_pairs(
+            pairs,
+            val_ratio=data_cfg.get("val_ratio", 0.1),
+            seed=data_cfg.get("split_seed", config.get("seed", 42)),
+            val_count=data_cfg.get("val_count"),
+        )
+
+    train_pairs = build_pairs(data_cfg["root"], data_cfg["dataset"], data_cfg["train_split"])
+    val_pairs = build_pairs(data_cfg["root"], data_cfg["dataset"], data_cfg["val_split"])
+    return train_pairs, val_pairs
+
+
 def make_loader(
     config: dict,
     split_name: str,
@@ -43,16 +61,19 @@ def make_loader(
     *,
     eval_mode: bool = False,
     limit_override: int | None = None,
+    pairs: list | None = None,
 ) -> DataLoader:
     data_cfg = config["data"]
-    root = data_cfg["root"]
-    split = data_cfg[f"{split_name}_split"]
-    pairs = build_pairs(root, data_cfg["dataset"], split)
+    if pairs is None:
+        split = data_cfg[f"{split_name}_split"]
+        pairs = build_pairs(data_cfg["root"], data_cfg["dataset"], split)
+    else:
+        pairs = list(pairs)
     limit = data_cfg.get(f"limit_{split_name}", 0) if limit_override is None else limit_override
     if limit:
         pairs = pairs[:limit]
     if not pairs:
-        raise RuntimeError(f"No {split_name} pairs found under {root}")
+        raise RuntimeError(f"No {split_name} pairs found.")
 
     dataset = StereoSRDataset(
         pairs=pairs,
@@ -109,8 +130,16 @@ def main() -> None:
         print("run mode: train")
     save_json(config, out_dir / "config.json")
 
-    train_loader = make_loader(config, "train", shuffle=run_mode != "overfit", device=device)
-    val_loader = train_loader if run_mode == "overfit" else make_loader(config, "val", shuffle=False, device=device)
+    train_pairs, val_pairs = make_train_val_pairs(config)
+    print(f"data pairs: train={len(train_pairs)} val={len(val_pairs)}")
+    train_loader = make_loader(config, "train", shuffle=run_mode != "overfit", device=device, pairs=train_pairs)
+    val_loader = train_loader if run_mode == "overfit" else make_loader(
+        config,
+        "val",
+        shuffle=False,
+        device=device,
+        pairs=val_pairs,
+    )
     train_eval_loader = None
     train_eval_every = train_cfg.get("eval_train_every", 0)
     if run_mode != "overfit" and train_eval_every:
@@ -121,6 +150,7 @@ def main() -> None:
             device=device,
             eval_mode=True,
             limit_override=train_cfg.get("eval_train_limit", 0),
+            pairs=train_pairs,
         )
     model = create_model(config).to(device)
     print(f"model parameters: {count_parameters(model) / 1e6:.3f} M")

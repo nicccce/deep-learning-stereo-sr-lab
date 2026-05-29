@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from stereo_sr_lab.data import StereoSRDataset, build_pairs
+from stereo_sr_lab.data import StereoSRDataset, build_pairs_from_source
 from stereo_sr_lab.models import count_parameters, create_model
 from stereo_sr_lab.training.engine import evaluate_model
 from stereo_sr_lab.training.utils import get_device, load_checkpoint, load_config, save_json
@@ -19,6 +19,7 @@ def main() -> None:
     parser.add_argument("--config", default=str(ROOT / "configs" / "stereo_sr_x2.json"))
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--data-root")
+    parser.add_argument("--dataset")
     parser.add_argument("--split")
     parser.add_argument("--device")
     parser.add_argument("--limit", type=int, default=0)
@@ -27,17 +28,28 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config(args.config)
+    data_cfg = config["data"]
+    source = dict(
+        data_cfg.get("test_source")
+        or {
+            "dataset": data_cfg["dataset"],
+            "root": data_cfg["root"],
+            "split": data_cfg.get("val_split", "Validation"),
+        }
+    )
     if args.data_root:
-        config["data"]["root"] = args.data_root
+        source["root"] = args.data_root
+    if args.dataset:
+        source["dataset"] = args.dataset
     if args.split:
-        config["data"]["val_split"] = args.split
+        source["split"] = args.split
     if args.eval_crop_size is not None:
-        config["data"]["eval_crop_size"] = args.eval_crop_size
+        data_cfg["eval_crop_size"] = args.eval_crop_size
     if args.device:
         config["runtime"]["device"] = args.device
 
     device = get_device(config["runtime"].get("device", "cuda"))
-    pairs = build_pairs(config["data"]["root"], config["data"]["dataset"], config["data"]["val_split"])
+    pairs = build_pairs_from_source(source)
     if args.limit:
         pairs = pairs[: args.limit]
     if not pairs:

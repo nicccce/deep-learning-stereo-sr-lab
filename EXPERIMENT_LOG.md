@@ -62,6 +62,62 @@
 - 本次正式测试是阶段性短测，不是最终 50 epoch 全量结果；表中数值适合写入阶段 LOG，不应作为最终论文指标。
 - 后续正式结果建议在相同记录格式下扩大到完整 `configs/stereo_sr_x2.json`，再补 `mono_sr_x2_ablation` 和 `stereo_sr_x4` 对照。
 
+## 2026-05-29 论文式 x2 全量训练
+
+### 配置调整
+
+- 按参考代码的思路改为“小训练 patch + 大 batch + 验证/测试较大裁剪”。
+- 已直接修改 `configs/stereo_sr_x2.json`：`hr_patch_size=96`，`eval_crop_size=256`，`batch_size=16`，`num_workers=8`，`limit_train=0`，`limit_val=0`，`output_dir=runs/stereo_sr_x2_paperlike`。
+- 当前 x2 尺寸关系：训练 LR `48x48` -> SR/HR `96x96`；评估 LR `128x128` -> SR/HR `256x256`。
+- 对照参考：SwiniPASSR/NTIRE22 x4 配置使用 `H_size=96`、LR `24x24`、stereo batch `16`；iPASSR x2 使用 LR `30x90` / HR `60x180` patch、batch `36`。因此本配置更接近论文代码的训练形态。
+
+### 训练命令
+
+```bash
+conda run -n dl-lab python scripts/train.py   --config configs/stereo_sr_x2.json   --device cuda:0   --eval-train-every 1   --eval-train-limit 0
+```
+
+- 数据：Flickr1024 Train 全 800 对，Validation 全 112 对；另用 Test 全 112 对做独立评估。
+- 训练：50 epoch，`StereoSRNet` 约 515,524 参数，AdamW，`lr=2e-4`，CosineAnnealingLR，AMP 开启。
+- 速度：评估裁剪从 `512` 降到 `256` 后，每对评估约 `0.050~0.074s`；训练期间记录的 `seconds_per_pair` 约 `0.074s`。
+
+### 训练曲线摘要
+
+| Epoch | Train L1 | Train PSNR | Train SSIM | Validation PSNR | Validation SSIM |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 0.071034 | 25.0279 | 0.7932 | 24.8107 | 0.7838 |
+| 10 | 0.062961 | 25.8018 | 0.8290 | 25.5696 | 0.8215 |
+| 25 | 0.059049 | 26.4466 | 0.8468 | 26.1394 | 0.8384 |
+| 50 | 0.057979 | 26.5861 | 0.8504 | 26.2677 | 0.8420 |
+
+- 最佳 Validation：epoch 50，`PSNR=26.2677`，`SSIM=0.8420`。
+- 曲线图：`runs/stereo_sr_x2_paperlike/history_curve.png`。
+
+![论文式 x2 全量训练曲线](runs/stereo_sr_x2_paperlike/history_curve.png)
+
+### 独立评估
+
+Validation 全量评估命令：
+
+```bash
+conda run -n dl-lab python scripts/evaluate.py   --config runs/stereo_sr_x2_paperlike/config.json   --checkpoint runs/stereo_sr_x2_paperlike/best.pt   --output runs/stereo_sr_x2_paperlike/eval_validation_results.json   --device cuda:0
+```
+
+Validation 结果：`PSNR=26.2678`，`SSIM=0.8420`，`seconds_per_pair=0.0506`，`num_pairs=112`。
+
+Test 全量评估命令：
+
+```bash
+conda run -n dl-lab python scripts/evaluate.py   --config runs/stereo_sr_x2_paperlike/config.json   --checkpoint runs/stereo_sr_x2_paperlike/best.pt   --split Test   --output runs/stereo_sr_x2_paperlike/eval_test_results.json   --device cuda:0
+```
+
+Test 结果：`PSNR=25.6567`，`SSIM=0.8431`，`seconds_per_pair=0.0505`，`num_pairs=112`。
+
+### 说明
+
+- 这次训练完整使用 Train/Validation/Test split 的全部图像；训练 patch 是随机裁剪，不是整图训练。
+- 由于评估尺寸改为 `256x256` HR crop，指标不能和之前 `512x512` eval crop 的 run 逐项等价比较；但速度、batch 规模和训练方式更接近论文代码。
+
 ## 待跑实验
 
 | 编号 | 配置 | 数据 | 命令 | 结果 |
@@ -69,5 +125,5 @@
 | E0 | smoke test | 随机张量 | `python scripts/smoke_test.py` | 已通过 |
 | E1 | overfit x2 | Flickr1024 单 batch | `python scripts/train.py --config configs/overfit_x2.json` | 已通过：CUDA 30 epoch，L1 0.0966→0.0519，PSNR 27.391→27.523 |
 | E2 | mono x2 | Flickr1024 | `python scripts/train.py --config configs/mono_sr_x2_ablation.json` | 待记录 |
-| E3 | stereo x2 | Flickr1024 | `python scripts/train.py --config configs/stereo_sr_x2.json` | 阶段性通过：5 epoch/64 train/8 val，best val PSNR 23.735，SSIM 0.7747 |
+| E3 | stereo x2 | Flickr1024 | `python scripts/train.py --config configs/stereo_sr_x2.json` | 已完成：论文式 x2 全量 50 epoch，Val PSNR 26.268/SSIM 0.8420，Test PSNR 25.657/SSIM 0.8431 |
 | E4 | stereo x4 | Flickr1024 | `python scripts/train.py --config configs/stereo_sr_x4.json` | 待记录 |

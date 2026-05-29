@@ -36,9 +36,9 @@ python scripts/prepare_data.py --data-root ../data --out-root datasets
 
 - `../data/flickr1024/Flickr1024.zip` 到 `datasets/flickr1024/Flickr1024`
 - `../data/middlebury_2014/perfect_train/*.zip` 到 `datasets/middlebury_2014/perfect_train`
-- `../data/kitti/data_depth_selection.zip` 到 `datasets/kitti`
+- `../data/kitti/data_stereo_flow.zip` 到 `datasets/kitti`
 
-当前训练配置默认使用 Flickr1024。Middlebury 可以作为额外验证或少量微调数据；KITTI depth selection 包含 depth-completion 结构，部分 split 不是标准左右图 SR 标注，因此本框架主要用它做推理、计时或合成 LR 的展示测试。
+当前训练配置会把 Flickr1024 全部 split 与 Middlebury 2014 合并成一个训练池，再按 `val_ratio` 和 `split_seed` 固定切成 train/val。KITTI 2012 stereo/flow 包中的 `training` 与 `testing` split 会作为独立大测试集，用 `colored_0`/`colored_1` 做合成 LR 的 SR 评价、推理展示和计时。
 
 ## 快速自检
 
@@ -53,7 +53,7 @@ python scripts/smoke_test.py
 框架支持两个状态，便于在本地和 A800 上分工排查：
 
 - `overfit`：固定一组训练 batch 反复训练，用来验证数据读取、模型前向、损失和反传是否真的能学。若这个状态下 loss 不下降或 PSNR 不上升，优先查代码、尺度、损失和数据配对。
-- `train`：使用完整训练/验证 split 正常训练，用于正式实验和报告结果。
+- `train`：合并配置里的两个训练数据源，再固定切分 train/val，用于正式实验和报告结果。
 
 单 batch 过拟合验证：
 
@@ -94,7 +94,6 @@ python scripts/train.py --config configs/mono_sr_x2_ablation.json
 ```bash
 python scripts/train.py \
   --config configs/stereo_sr_x2.json \
-  --data-root datasets/flickr1024/Flickr1024 \
   --output-dir runs/debug_x2 \
   --epochs 2 \
   --batch-size 2 \
@@ -113,7 +112,7 @@ python scripts/evaluate.py \
   --output runs/stereo_sr_x2_light_ffl/eval_results.json
 ```
 
-输出指标包括平均 PSNR、SSIM、每对图像推理时间和参数量。默认对 Validation 前 20 对做评估；修改配置里的 `limit_val` 或命令行 `--limit` 可以扩大范围。
+输出指标包括平均 PSNR、SSIM、每对图像推理时间和参数量。默认使用配置里的 `test_source`，也就是 KITTI 2012 大测试集；可以用 `--split training`、`--split testing` 或 `--limit` 做子集评估。
 
 ## 推理与可视化
 

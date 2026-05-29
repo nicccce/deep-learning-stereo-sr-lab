@@ -2,17 +2,31 @@
   "experiment_name": "stereo_sr_x4_light_ffl",
   "seed": 42,
   "data": {
-    "dataset": "flickr1024",
-    "root": "datasets/flickr1024/Flickr1024",
-    "train_split": "Train",
-    "val_split": "Validation",
+    "train_sources": [
+      {
+        "dataset": "flickr1024",
+        "root": "datasets/flickr1024/Flickr1024",
+        "split": "all"
+      },
+      {
+        "dataset": "middlebury2014",
+        "root": "datasets/middlebury_2014/perfect_train"
+      }
+    ],
+    "test_source": {
+      "dataset": "kitti2012",
+      "root": "datasets/kitti",
+      "split": "all"
+    },
+    "val_ratio": 0.1,
+    "split_seed": 42,
     "scale": 4,
-    "hr_patch_size": 192,
-    "eval_crop_size": 512,
+    "hr_patch_size": 96,
+    "eval_crop_size": 0,
     "augment": true,
-    "num_workers": 4,
+    "num_workers": 8,
     "limit_train": 0,
-    "limit_val": 20
+    "limit_val": 0
   },
   "model": {
     "name": "stereo_sr",
@@ -30,7 +44,7 @@
   },
   "train": {
     "epochs": 50,
-    "batch_size": 4,
+    "batch_size": 16,
     "lr": 0.0002,
     "eta_min": 1e-06,
     "weight_decay": 0.0,
@@ -47,6 +61,6 @@
   },
   "runtime": {
     "device": "cuda",
-    "output_dir": "runs/stereo_sr_x4_light_ffl"
+    "output_dir": "runs/stereo_sr_x4_paperlike"
   }
 }
