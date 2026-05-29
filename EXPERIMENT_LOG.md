@@ -127,3 +127,56 @@ Test 结果：`PSNR=25.6567`，`SSIM=0.8431`，`seconds_per_pair=0.0505`，`num_
 | E2 | mono x2 | Flickr1024 | `python scripts/train.py --config configs/mono_sr_x2_ablation.json` | 待记录 |
 | E3 | stereo x2 | Flickr1024 | `python scripts/train.py --config configs/stereo_sr_x2.json` | 已完成：论文式 x2 全量 50 epoch，Val PSNR 26.268/SSIM 0.8420，Test PSNR 25.657/SSIM 0.8431 |
 | E4 | stereo x4 | Flickr1024 | `python scripts/train.py --config configs/stereo_sr_x4.json` | 待记录 |
+
+
+## 2026-05-29 x2/x4 阶段训练结果汇总
+
+> 说明：以下为当前轻量 `StereoSRNet` 与现有数据协议下的阶段结果，不是最终代码结果。远端结果来自 `runs/stereo_sr_x2_paperlike` 和 `runs/stereo_sr_x4_paperlike`。
+
+### 当前统一数据协议
+
+- 训练池：Flickr1024 全部 split + Middlebury2014，合并后固定切分为 train `931` 对、val `103` 对。
+- 测试集：KITTI2012 `training + testing`，共 `778` 对。
+- 评价：左右视图分别计算 PSNR/SSIM 后汇总，边界按 `scale` 裁剪。
+
+### 训练与评估结果
+
+| Scale | Train input -> output | Batch | Params | Val PSNR | Val SSIM | KITTI eval PSNR | KITTI eval SSIM | Time / pair |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| x2 | `48x48 -> 96x96` | 16 | 515,524 | 26.2745 | 0.8457 | 28.2818 | 0.8699 | 0.0079s |
+| x4 | `24x24 -> 96x96` | 16 | 598,660 | 22.8478 | 0.6586 | 25.8408 | 0.7610 | 0.0144s |
+
+### 训练曲线摘要
+
+| Scale | Epoch | Train L1 | Val PSNR | Val SSIM |
+| --- | ---: | ---: | ---: | ---: |
+| x2 | 1 | 0.070802 | 24.7145 | 0.7857 |
+| x2 | 10 | 0.062002 | 25.5979 | 0.8263 |
+| x2 | 25 | 0.057665 | 26.1509 | 0.8422 |
+| x2 | 50 | 0.058275 | 26.2745 | 0.8457 |
+| x4 | 1 | 0.101412 | 22.1470 | 0.6139 |
+| x4 | 10 | 0.095394 | 22.6397 | 0.6469 |
+| x4 | 25 | 0.092387 | 22.7958 | 0.6562 |
+| x4 | 50 | 0.091620 | 22.8478 | 0.6586 |
+
+
+- 曲线图：`runs/summary_x2_x4/x2_x4_validation_curves.svg`。
+
+![x2/x4 阶段验证曲线](runs/summary_x2_x4/x2_x4_validation_curves.svg)
+
+### 与论文/参考基线的阶段性对比
+
+| Method / source | Scale | Params | KITTI2012 PSNR/SSIM | 备注 |
+| --- | --- | ---: | --- | --- |
+| Ours current StereoSRNet | x2 | 0.516M | 28.2818/0.8699 | 当前统一 KITTI `training+testing` 协议，非最终代码 |
+| iPASSR paper baseline | x2 | 1.37M | 31.11/0.9240 | 论文公开 benchmark 协议，不能与当前协议严格逐项等价 |
+| Ours current StereoSRNet | x4 | 0.599M | 25.8408/0.7610 | 当前统一 KITTI `training+testing` 协议，非最终代码 |
+| StereoSR paper baseline | x4 | 1.42M | 24.53/0.7555 | SwinFSR/CVPRW 2023 汇总表中的 KITTI2012 x4 参考值 |
+| PASSRnet paper baseline | x4 | 1.42M | 26.34/0.7981 | 同上 |
+| iPASSR paper baseline | x4 | 1.42M | 26.56/0.8053 | 同上 |
+
+### 解读
+
+- x4 的训练尺寸与 SwiniPASSR 参考配置接近：HR patch `96`，LR 输入 `24x24`，batch `16`。
+- 当前 x4 指标 `25.8408/0.7610` 已高于 StereoSR x4 参考值，但低于 PASSRnet/iPASSR；考虑到当前模型只有 `0.599M` 参数，且代码还不是最终版，这个阶段结果是可接受的。
+- 上表论文基线来自公开 benchmark 汇总，测试集 split、退化生成、评估脚本与本项目当前 `KITTI training+testing` 协议不完全一致；最终报告应优先使用同一代码和同一测试协议下的消融比较。
