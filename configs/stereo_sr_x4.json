@@ -1,0 +1,52 @@
+{
+  "experiment_name": "stereo_sr_x4_light_ffl",
+  "seed": 42,
+  "data": {
+    "dataset": "flickr1024",
+    "root": "datasets/flickr1024/Flickr1024",
+    "train_split": "Train",
+    "val_split": "Validation",
+    "scale": 4,
+    "hr_patch_size": 192,
+    "eval_crop_size": 512,
+    "augment": true,
+    "num_workers": 4,
+    "limit_train": 0,
+    "limit_val": 20
+  },
+  "model": {
+    "name": "stereo_sr",
+    "scale": 4,
+    "channels": 48,
+    "num_feature_blocks": 6,
+    "num_reconstruct_blocks": 4,
+    "max_disp": 0
+  },
+  "loss": {
+    "l1_weight": 1.0,
+    "ffl_weight": 0.05,
+    "ffl_alpha": 1.0,
+    "attn_smooth_weight": 0.001
+  },
+  "train": {
+    "epochs": 50,
+    "batch_size": 4,
+    "lr": 0.0002,
+    "eta_min": 1e-06,
+    "weight_decay": 0.0,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "amp": true,
+    "clip_grad_norm": 1.0,
+    "log_every": 20,
+    "save_every": 1,
+    "validate_every": 1,
+    "run_mode": "train"
+  },
+  "runtime": {
+    "device": "cuda",
+    "output_dir": "runs/stereo_sr_x4_light_ffl"
+  }
+}

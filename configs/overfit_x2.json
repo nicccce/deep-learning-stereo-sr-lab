@@ -1,0 +1,52 @@
+{
+  "experiment_name": "overfit_x2_one_batch",
+  "seed": 42,
+  "data": {
+    "dataset": "flickr1024",
+    "root": "datasets/flickr1024/Flickr1024",
+    "train_split": "Train",
+    "val_split": "Validation",
+    "scale": 2,
+    "hr_patch_size": 96,
+    "eval_crop_size": 0,
+    "augment": false,
+    "num_workers": 0,
+    "limit_train": 1,
+    "limit_val": 1
+  },
+  "model": {
+    "name": "stereo_sr",
+    "scale": 2,
+    "channels": 32,
+    "num_feature_blocks": 4,
+    "num_reconstruct_blocks": 3,
+    "max_disp": 0
+  },
+  "loss": {
+    "l1_weight": 1.0,
+    "ffl_weight": 0.02,
+    "ffl_alpha": 1.0,
+    "attn_smooth_weight": 0.001
+  },
+  "train": {
+    "run_mode": "overfit",
+    "epochs": 200,
+    "batch_size": 1,
+    "lr": 0.0005,
+    "eta_min": 1e-06,
+    "weight_decay": 0.0,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "amp": true,
+    "clip_grad_norm": 1.0,
+    "log_every": 1,
+    "save_every": 20,
+    "validate_every": 10
+  },
+  "runtime": {
+    "device": "cuda",
+    "output_dir": "runs/overfit_x2_one_batch"
+  }
+}
