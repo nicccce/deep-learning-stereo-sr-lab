@@ -12,6 +12,8 @@ def move_batch(batch: dict, device: torch.device) -> dict:
 
 def autocast_context(device: torch.device, enabled: bool):
     if enabled and device.type == "cuda":
+        if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
+            return torch.amp.autocast("cuda")
         return torch.cuda.amp.autocast()
     return nullcontext()
 
@@ -21,6 +23,8 @@ def train_one_epoch(model, loader, criterion, optimizer, scaler, device, epoch: 
     meters: dict[str, AverageMeter] = {}
     amp = config["train"].get("amp", False)
     log_every = config["train"].get("log_every", 20)
+    if config["train"].get("run_mode") == "overfit":
+        log_every = 1
     clip_norm = config["train"].get("clip_grad_norm", 0.0)
 
     for step, batch in enumerate(loader, start=1):

@@ -168,7 +168,10 @@ def main() -> None:
         T_max=train_cfg["epochs"],
         eta_min=train_cfg.get("eta_min", 1e-6),
     )
-    scaler = torch.cuda.amp.GradScaler(enabled=train_cfg.get("amp", False) and device.type == "cuda")
+    if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
+        scaler = torch.amp.GradScaler("cuda", enabled=train_cfg.get("amp", False) and device.type == "cuda")
+    else:
+        scaler = torch.cuda.amp.GradScaler(enabled=train_cfg.get("amp", False) and device.type == "cuda")
 
     start_epoch = 1
     best_psnr = 0.0
