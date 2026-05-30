@@ -83,10 +83,11 @@ x4 双目基线：
 python scripts/train.py --config configs/stereo_sr_x4.json
 ```
 
-单目消融：
+与 SwinStereoSRNet 对齐的单目消融：
 
 ```bash
-python scripts/train.py --config configs/mono_sr_x2_ablation.json
+python scripts/train.py --config configs/swin_mono_sr_x2_ablation.json
+python scripts/train.py --config configs/swin_mono_sr_x4_ablation.json
 ```
 
 常用覆盖参数：

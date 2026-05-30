@@ -56,6 +56,37 @@ def main() -> None:
     print("[Swin] OK", {"loss": float(swin_loss), "parts": {key: float(value) for key, value in swin_parts.items()}})
     print("[Swin]", {"psnr": psnr(swin_out["sr_left"], batch["hr_left"]), "ssim": ssim(swin_out["sr_left"], batch["hr_left"])})
 
+    # ---- Swin single-image ablation (aligned with SwinStereoSRNet) ----
+    config_swin_mono = {
+        "data": {"scale": 2},
+        "model": {
+            "name": "swin_mono_sr",
+            "scale": 2,
+            "embed_dim": 12,
+            "depths": [2, 2],
+            "num_heads": [3, 3],
+            "window_size": 4,
+            "mlp_ratio": 2.0,
+            "img_size": 16,
+            "fusion_context": "zero",
+        },
+    }
+    swin_mono_model = create_model(config_swin_mono)
+    swin_mono_out = swin_mono_model(batch["lr_left"], batch["lr_right"])
+    assert swin_mono_out["sr_left"].shape == batch["hr_left"].shape, (
+        f"Shape mismatch: {swin_mono_out['sr_left'].shape} vs {batch['hr_left'].shape}")
+    swin_mono_loss, swin_mono_parts = StereoSRLoss(ffl_weight=0.01)(swin_mono_out, batch)
+    assert torch.isfinite(swin_mono_loss)
+    swin_mono_loss.backward()
+    print("[SwinMono] OK", {
+        "loss": float(swin_mono_loss),
+        "parts": {key: float(value) for key, value in swin_mono_parts.items()},
+    })
+    print("[SwinMono]", {
+        "psnr": psnr(swin_mono_out["sr_left"], batch["hr_left"]),
+        "ssim": ssim(swin_mono_out["sr_left"], batch["hr_left"]),
+    })
+
     print("\nAll smoke tests passed!")
 
 

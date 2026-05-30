@@ -1,0 +1,70 @@
+{
+  "experiment_name": "swin_mono_sr_x4_ablation",
+  "seed": 42,
+  "data": {
+    "train_sources": [
+      {
+        "dataset": "flickr1024",
+        "root": "datasets/flickr1024/Flickr1024",
+        "split": "all"
+      },
+      {
+        "dataset": "middlebury2014",
+        "root": "datasets/middlebury_2014/perfect_train"
+      }
+    ],
+    "test_source": {
+      "dataset": "kitti2012",
+      "root": "datasets/kitti",
+      "split": "all"
+    },
+    "val_ratio": 0.1,
+    "split_seed": 42,
+    "scale": 4,
+    "hr_patch_size": 96,
+    "eval_crop_size": 0,
+    "augment": true,
+    "num_workers": 2,
+    "limit_train": 0,
+    "limit_val": 0
+  },
+  "model": {
+    "name": "swin_mono_sr",
+    "scale": 4,
+    "embed_dim": 60,
+    "depths": [6, 6, 6, 6, 6, 6],
+    "num_heads": [6, 6, 6, 6, 6, 6],
+    "window_size": 8,
+    "mlp_ratio": 2.0,
+    "max_disp": 0,
+    "drop_path_rate": 0.1,
+    "resi_connection": "1conv",
+    "use_checkpoint": false,
+    "img_size": 24,
+    "fusion_context": "zero"
+  },
+  "loss": {
+    "l1_weight": 1.0,
+    "ffl_weight": 0.05,
+    "ffl_alpha": 1.0,
+    "attn_smooth_weight": 0.0
+  },
+  "train": {
+    "epochs": 50,
+    "batch_size": 16,
+    "lr": 0.0002,
+    "eta_min": 1e-06,
+    "weight_decay": 0.0,
+    "betas": [0.9, 0.999],
+    "amp": true,
+    "clip_grad_norm": 1.0,
+    "log_every": 20,
+    "save_every": 1,
+    "validate_every": 1,
+    "run_mode": "train"
+  },
+  "runtime": {
+    "device": "cuda",
+    "output_dir": "runs/swin_mono_sr_x4_ablation"
+  }
+}
