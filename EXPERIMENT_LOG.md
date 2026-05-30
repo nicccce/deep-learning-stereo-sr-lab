@@ -456,9 +456,49 @@ conda run -n dl-lab python scripts/evaluate.py \
   --output runs/swin_mono_sr_x2_ablation/eval_results.json
 ```
 
-### 待分析
+### 远端训练与回传
 
-待远端结果返回后，与已有 `runs/swin_stereo_sr_x2/eval_results.json` 对比：`SwinStereoSRNet x2` KITTI PSNR `28.2809`、SSIM `0.8700`、`seconds_per_pair=0.3677s`、参数量 `1,581,964`。若 `SwinMonoSRNet` 与其差异小于常见随机波动量级，则当前双目模块作用不显著；若双目模型有稳定正向差距，才可说明 PAM/fusion 有实际贡献。
+远端环境：`ssh -p 20058 u2605173@211.87.224.135`，GPU `Tesla V100-SXM2-32GB`，PyTorch `2.7.1+cu118`。代码通过 GitHub 同步到远端，训练后已将结果目录拉回本机：`runs/swin_mono_sr_x2_ablation`。
+
+远端实际命令：
+
+```bash
+cd ~/dl-lab/deep-learning-stereo-sr-lab
+git pull origin master
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate dl-lab
+python scripts/train.py --config configs/swin_mono_sr_x2_ablation.json --device cuda:0
+python scripts/evaluate.py \
+  --config runs/swin_mono_sr_x2_ablation/config.json \
+  --checkpoint runs/swin_mono_sr_x2_ablation/best.pt \
+  --device cuda:0 \
+  --output runs/swin_mono_sr_x2_ablation/eval_results.json
+```
+
+### 训练结果
+
+| Model | Scale | Epochs | Params | Best Val Epoch | Val PSNR | Val SSIM | Val Time / pair |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| SwinMonoSRNet | x2 | 50 | 1,567,323 | 50 | 26.2955 | 0.8458 | 0.3932s |
+| SwinStereoSRNet | x2 | 50 | 1,581,964 | 50 | 26.2801 | 0.8454 | 0.3677s* |
+
+`*` SwinStereoSRNet 的 time/pair 来自 KITTI eval 记录；原日志未单独列出 Val time。
+
+训练曲线摘要：`SwinMonoSRNet` Val PSNR 从 epoch 1 的 `24.604` 稳步上升到 epoch 50 的 `26.2955`；后 10 个 epoch 基本进入平台期，说明 50 epoch 设置足够得到稳定阶段结果。
+
+### KITTI 同协议测试对比
+
+| Model | Params | KITTI PSNR | KITTI SSIM | Time / pair | Num pairs |
+|---|---:|---:|---:|---:|---:|
+| SwinStereoSRNet | 1,581,964 | 28.2809 | 0.8700 | 0.3677s | 778 |
+| SwinMonoSRNet | 1,567,323 | 28.3074 | 0.8704 | 0.3580s | 778 |
+| Mono - Stereo | -14,641 | +0.0265 | +0.0004 | -0.0097s | 0 |
+
+### 结论
+
+这次同框架单目消融没有证明当前双目 PAM / fusion 模块有显著正作用。相反，在相同训练数据、相同 epoch、相同 Swin 骨干、相同 KITTI `training + testing` 评估协议下，`SwinMonoSRNet` 的 KITTI PSNR/SSIM 略高于 `SwinStereoSRNet`，推理也略快。
+
+差异幅度很小，仍可能落在单次训练随机波动范围内，因此不宜写成“单目显著优于双目”。但更重要的是：当前结果也不能支持“这个双目模块带来了显著收益”。报告里更稳妥的表述是：**当前 PAM/fusion 设计在本协议下没有体现出可观增益，需要进一步改进注意力约束、遮挡/有效性建模或训练策略后再验证。**
 
 ## 2026-05-30 iPASSR 同协议重训与评估 baseline
 
