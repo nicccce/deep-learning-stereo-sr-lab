@@ -53,6 +53,38 @@ def make_train_val_pairs(config: dict) -> tuple[list, list]:
     return train_pairs, val_pairs
 
 
+def scheduled_max_disp(config: dict, epoch: int) -> int | None:
+    schedule = config.get("train", {}).get("max_disp_schedule", {})
+    if not schedule or not schedule.get("enabled", True):
+        return None
+
+    start = int(schedule.get("start", 10))
+    end = int(schedule.get("end", config.get("model", {}).get("max_disp", 0)))
+    warmup_epochs = max(1, int(schedule.get("warmup_epochs", 1)))
+    if epoch >= warmup_epochs:
+        return end
+
+    finite_end = int(schedule.get("finite_end", end if end > 0 else config.get("model", {}).get("img_size", start)))
+    if warmup_epochs == 1:
+        return end
+    progress = (epoch - 1) / (warmup_epochs - 1)
+    return int(round(start + (finite_end - start) * progress))
+
+
+def set_model_max_disp(model: torch.nn.Module, max_disp: int | None) -> int | None:
+    if max_disp is None:
+        return None
+    updated = 0
+    for module in model.modules():
+        setter = getattr(module, "set_max_disp", None)
+        if callable(setter):
+            setter(max_disp)
+            updated += 1
+    if updated == 0:
+        return None
+    return max_disp
+
+
 def make_loader(
     config: dict,
     split_name: str,
@@ -180,10 +212,19 @@ def main() -> None:
         start_epoch = last_epoch + 1
 
     history = []
+    last_max_disp = None
     for epoch in range(start_epoch, train_cfg["epochs"] + 1):
+        current_max_disp = set_model_max_disp(model, scheduled_max_disp(config, epoch))
+        if current_max_disp is not None and current_max_disp != last_max_disp:
+            scope = "unlimited" if current_max_disp <= 0 else str(current_max_disp)
+            print(f"epoch {epoch:03d} biPAM max_disp={scope}", flush=True)
+            last_max_disp = current_max_disp
+
         train_stats = train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, epoch, config)
         scheduler.step()
         record = {"epoch": epoch, "lr": scheduler.get_last_lr()[0], "train": train_stats}
+        if current_max_disp is not None:
+            record["max_disp"] = current_max_disp
 
         if train_eval_loader is not None and epoch % train_eval_every == 0:
             train_eval_stats = evaluate_model(

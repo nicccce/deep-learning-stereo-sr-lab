@@ -3,17 +3,52 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class ParallaxAttention(nn.Module):
-    """Row-wise bidirectional attention for rectified stereo pairs."""
+class ResidualMatchingBlock(nn.Module):
+    def __init__(self, channels: int) -> None:
+        super().__init__()
+        groups = 4 if channels % 4 == 0 else 1
+        self.body = nn.Sequential(
+            nn.Conv2d(channels, channels, 3, 1, 1, groups=groups),
+            nn.LeakyReLU(0.1, inplace=True),
+            nn.Conv2d(channels, channels, 3, 1, 1, groups=groups),
+        )
 
-    def __init__(self, channels: int, max_disp: int = 0) -> None:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.body(x) + x
+
+
+def M_Relax(attention: torch.Tensor, num_pixels: int = 2) -> torch.Tensor:
+    """Relax a row-wise parallax map along the query-pixel dimension."""
+    if num_pixels <= 0:
+        return attention
+    relaxed = [attention]
+    for offset in range(1, num_pixels + 1):
+        relaxed.append(F.pad(attention[:, :-offset, :], (0, 0, offset, 0)))
+        relaxed.append(F.pad(attention[:, offset:, :], (0, 0, 0, offset)))
+    return torch.stack(relaxed, dim=0).sum(dim=0)
+
+
+class ParallaxAttention(nn.Module):
+    """iPASSR-style bidirectional Parallax Attention Module.
+
+    The module builds both right-to-left and left-to-right row-wise parallax
+    maps from a shared stereo matching score, estimates mutual visibility with
+    the M_Relax occlusion handling rule, and returns mask-gated transported
+    features for stereo fusion.
+    """
+
+    def __init__(self, channels: int, max_disp: int = 0, relax_pixels: int = 2) -> None:
         super().__init__()
         self.max_disp = max_disp
-        self.query = nn.Conv2d(channels, channels, 1)
-        self.key = nn.Conv2d(channels, channels, 1)
-        self.value = nn.Conv2d(channels, channels, 1)
-        self.proj = nn.Conv2d(channels, channels, 1)
-        self.logit_scale = nn.Parameter(torch.tensor(10.0))
+        self.relax_pixels = relax_pixels
+        self.match_left = nn.Sequential(
+            ResidualMatchingBlock(channels),
+            nn.Conv2d(channels, channels, 1),
+        )
+        self.match_right = nn.Sequential(
+            ResidualMatchingBlock(channels),
+            nn.Conv2d(channels, channels, 1),
+        )
 
     def _row_tokens(self, tensor: torch.Tensor) -> torch.Tensor:
         b, c, h, w = tensor.shape
@@ -32,34 +67,66 @@ class ParallaxAttention(nn.Module):
         fill = -torch.finfo(scores.dtype).max / 4
         return scores.masked_fill(mask.unsqueeze(0), fill)
 
+    def set_max_disp(self, max_disp: int) -> None:
+        self.max_disp = int(max_disp)
+
+    def _visibility(
+        self,
+        right_to_left: torch.Tensor,
+        left_to_right: torch.Tensor,
+        b: int,
+        h: int,
+        w: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        right_to_left_relaxed = M_Relax(right_to_left, self.relax_pixels)
+        left_to_right_relaxed = M_Relax(left_to_right, self.relax_pixels)
+
+        valid_left = torch.bmm(
+            right_to_left_relaxed.contiguous().view(-1, w).unsqueeze(1),
+            left_to_right.permute(0, 2, 1).contiguous().view(-1, w).unsqueeze(2),
+        ).detach().contiguous().view(b, 1, h, w)
+        valid_right = torch.bmm(
+            left_to_right_relaxed.contiguous().view(-1, w).unsqueeze(1),
+            right_to_left.permute(0, 2, 1).contiguous().view(-1, w).unsqueeze(2),
+        ).detach().contiguous().view(b, 1, h, w)
+
+        return torch.tanh(5 * valid_left), torch.tanh(5 * valid_right)
+
     def forward(self, left: torch.Tensor, right: torch.Tensor, return_attention: bool = True) -> dict:
         b, _, h, w = left.shape
-        q_left = F.normalize(self._row_tokens(self.query(left)).float(), dim=-1)
-        q_right = F.normalize(self._row_tokens(self.query(right)).float(), dim=-1)
-        k_left = F.normalize(self._row_tokens(self.key(left)).float(), dim=-1)
-        k_right = F.normalize(self._row_tokens(self.key(right)).float(), dim=-1)
-        v_left = self._row_tokens(self.value(left))
-        v_right = self._row_tokens(self.value(right))
+        query = self.match_left(left)
+        support = self.match_right(right)
+        query = query - query.mean(dim=3, keepdim=True)
+        support = support - support.mean(dim=3, keepdim=True)
 
-        scale = self.logit_scale.clamp(1.0, 50.0)
-        scores = torch.bmm(q_left, k_right.transpose(1, 2)) * scale
+        q_left = self._row_tokens(query).float()
+        k_right = support.permute(0, 2, 1, 3).contiguous().view(b * h, -1, w).float()
+        scores = torch.bmm(q_left, k_right)
         scores = self._mask_by_disparity(scores)
-        right_to_left = torch.softmax(scores, dim=-1).to(v_right.dtype)
+        right_to_left = torch.softmax(scores, dim=-1).to(left.dtype)
+        left_to_right = torch.softmax(scores.transpose(1, 2), dim=-1).to(right.dtype)
+        valid_left, valid_right = self._visibility(
+            right_to_left.float(), left_to_right.float(), b, h, w)
+        valid_left = valid_left.to(left.dtype)
+        valid_right = valid_right.to(right.dtype)
 
-        scores_t = torch.bmm(q_right, k_left.transpose(1, 2)) * scale
-        scores_t = self._mask_by_disparity(scores_t)
-        left_to_right = torch.softmax(scores_t, dim=-1).to(v_left.dtype)
-
-        left_context = self._restore(torch.bmm(right_to_left, v_right), b, h, w)
-        right_context = self._restore(torch.bmm(left_to_right, v_left), b, h, w)
+        v_left = self._row_tokens(left)
+        v_right = self._row_tokens(right)
+        left_transferred = self._restore(torch.bmm(right_to_left, v_right), b, h, w)
+        right_transferred = self._restore(torch.bmm(left_to_right, v_left), b, h, w)
+        left_context = left * (1 - valid_left) + left_transferred * valid_left
+        right_context = right * (1 - valid_right) + right_transferred * valid_right
         output = {
-            "left_context": self.proj(left_context),
-            "right_context": self.proj(right_context),
-            "valid_left": right_to_left.max(dim=-1).values.reshape(b, 1, h, w),
-            "valid_right": left_to_right.max(dim=-1).values.reshape(b, 1, h, w),
+            "left_context": left_context,
+            "right_context": right_context,
+            "left_transferred": left_transferred,
+            "right_transferred": right_transferred,
+            "valid_left": valid_left,
+            "valid_right": valid_right,
+            "occlusion_left": 1 - valid_left,
+            "occlusion_right": 1 - valid_right,
         }
         if return_attention:
             output["right_to_left"] = right_to_left.reshape(b, h, w, w)
             output["left_to_right"] = left_to_right.reshape(b, h, w, w)
         return output
-

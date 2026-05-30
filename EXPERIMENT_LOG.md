@@ -607,3 +607,147 @@ python refs/code/iPASSR/evaluate_stereo_sr_lab.py \
 - iPASSR 参数量约 `1.38M/1.43M`，推理时间明显慢于轻量 CNN，但远快于当前 Swin 版本。
 - 这组结果比直接引用 iPASSR 论文指标更适合作为报告中的公平 baseline：同训练数据、同 LR 退化、同 KITTI 测试源、同 PSNR/SSIM/时间统计方式。
 
+
+
+## 2026-05-30 补齐 SwiniPASSR 缺失组件：biPAM + 立体几何损失 + 渐进视差训练
+
+### 修改动机
+
+前一版 `SwinStereoSRNet` 已经具备两段 RSTB、转换层、PAM 插入点、全局残差和 PixelShuffle 重建，但验证结果几乎与轻量 CNN 持平。进一步检查发现核心短板在于：
+
+1. `src/stereo_sr_lab/models/parallax_attention.py` 仍是简化 Q/K/V 行注意力，只有 softmax 搬运，没有 iPASSR 的双向可见性/遮挡处理。
+2. `src/stereo_sr_lab/training/losses.py` 只用 L1 + FFL + 可选注意力平滑，缺少指导 PAM 学习视差的 photo / smooth / cycle / consistency 几何监督。
+3. Swin 从头训练 50 epoch 不足，且训练初期全行搜索容易让 attention 在随机匹配中震荡。
+
+### 代码改动清单
+
+| 文件 | 修改内容 |
+|---|---|
+| `src/stereo_sr_lab/models/parallax_attention.py` | 将简化 `ParallaxAttention` 替换为 iPASSR 风格 biPAM：共享 stereo matching score 生成 `M_right_to_left` 与 `M_left_to_right`；加入 `M_Relax`；根据双向一致性生成 `valid_left/right` 和 `occlusion_left/right`；输出 mask-gated 的 `left_context/right_context` 供融合使用。 |
+| `src/stereo_sr_lab/training/losses.py` | 新增 iPASSR 几何损失：`photo`、`smooth`、`cycle`、`cons`。总损失为 `loss_SR + 0.1 * loss_cons + 0.1 * (loss_photo + loss_smooth + loss_cycle)`；其中 `loss_SR` 保留原项目的 L1 分支，并继续允许 FFL 作为 SR 分支的可选增强。 |
+| `scripts/train.py` | 新增 `max_disp_schedule` 调度器，每个 epoch 开始时调用 PAM 的 `set_max_disp()`；日志和 `history.json` 记录当前 `max_disp`。 |
+| `configs/swin_stereo_sr_x2.json` | `epochs=300`；新增 `max_disp_schedule={start:10, finite_end:48, end:0, warmup_epochs:100}`；输出目录改为 `runs/swin_stereo_sr_x2_bipam_300`。 |
+| `configs/swin_stereo_sr_x4.json` | `epochs=300`；新增 `max_disp_schedule={start:10, finite_end:24, end:0, warmup_epochs:100}`；输出目录改为 `runs/swin_stereo_sr_x4_bipam_300`。 |
+
+### biPAM 实现细节
+
+参考 `refs/code/iPASSR/model.py` 中 `PAM` 和 `M_Relax` 的核心逻辑实现：
+
+```text
+left/right feature
+  -> residual matching conv
+  -> row mean centering
+  -> score = Q_left @ K_right
+  -> M_right_to_left = softmax(score)
+  -> M_left_to_right = softmax(score^T)
+  -> M_Relax(M) 做 query 方向的上下邻域膨胀
+  -> 双向 attention 点积得到 valid_left / valid_right
+  -> tanh(5 * valid) 柔化为可见性 mask
+  -> xT = M @ opposite_view_feature
+  -> context = x * (1 - valid) + xT * valid
+```
+
+输出字段包括：
+
+- `right_to_left`, `left_to_right`: 训练几何损失使用的完整行注意力矩阵，形状 `(B, H, W, W)`。
+- `valid_left`, `valid_right`: iPASSR 式双向一致性可见区域。
+- `occlusion_left`, `occlusion_right`: `1 - valid`，用于观察遮挡区域。
+- `left_context`, `right_context`: mask-gated 视差搬运特征，仍保持旧融合接口。
+
+### 立体几何损失实现细节
+
+几何监督在 LR 残差空间中计算，流程对齐 `refs/code/iPASSR/train_stereo_sr_lab.py`：
+
+1. `loss_photo`：先计算 `abs(HR - bicubic(LR))`，下采样回 LR 尺度，再用 `M_right_to_left / M_left_to_right` 搬运对侧残差，在 `valid` 区域内做 L1。
+2. `loss_smooth`：对两张 attention map 在行方向和视差方向做 L1 平滑约束。
+3. `loss_cycle`：执行 left -> right -> left / right -> left -> right 循环搬运后，与原残差在可见区域内做 L1。
+4. `loss_cons`：对 `abs(HR - SR)` 的 LR 残差做双向一致性约束，attention map 在该项中 detach，避免 SR 残差一致性反向破坏视差匹配。
+
+训练日志中的 parts 现在会包含：`sr`、`l1`、`ffl`、`photo`、`smooth`、`cycle`、`cons`、`total`。
+
+### 渐进式 max_disp 策略
+
+配置含义：
+
+```json
+"max_disp_schedule": {
+  "enabled": true,
+  "start": 10,
+  "finite_end": 48,
+  "end": 0,
+  "warmup_epochs": 100
+}
+```
+
+- epoch 1 从 `max_disp=10` 开始，减少随机初始化阶段的全图盲搜。
+- warmup 内线性增加到 `finite_end`，x2 为 LR patch 宽度 48，x4 为 LR patch 宽度 24。
+- epoch 100 起设置 `max_disp=0`，沿用本项目约定表示不加局部窗口限制，即全行搜索。
+
+### 本机验证
+
+语法检查：
+
+```bash
+python3 -m py_compile \
+  src/stereo_sr_lab/models/parallax_attention.py \
+  src/stereo_sr_lab/training/losses.py \
+  scripts/train.py
+```
+
+Smoke test：
+
+```bash
+conda run -n dl-lab python scripts/smoke_test.py
+```
+
+结果：通过。CNN、SwinStereoSRNet、SwinMonoSRNet 均可前向；SwinStereoSRNet 可反传；几何 loss 各项均为 finite。
+
+最小 overfit 入口检查：
+
+```bash
+conda run -n dl-lab python scripts/train.py \
+  --config configs/swin_stereo_sr_x2.json \
+  --output-dir /tmp/swin_bipam_overfit_smoke \
+  --epochs 1 \
+  --batch-size 1 \
+  --mode overfit \
+  --device cpu
+```
+
+结果：通过。关键日志：`epoch 001 biPAM max_disp=10`，训练输出包含 `sr/l1/ffl/photo/smooth/cycle/cons/total`，并成功保存 checkpoint 与验证指标。
+
+### 远端正式训练计划
+
+正式训练使用新配置：
+
+```bash
+cd ~/dl-lab/deep-learning-stereo-sr-lab
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate dl-lab
+
+nohup python scripts/train.py \
+  --config configs/swin_stereo_sr_x2.json \
+  --device cuda:0 \
+  > runs/swin_stereo_sr_x2_bipam_300/train.log 2>&1 &
+
+nohup python scripts/train.py \
+  --config configs/swin_stereo_sr_x4.json \
+  --device cuda:0 \
+  > runs/swin_stereo_sr_x4_bipam_300/train.log 2>&1 &
+```
+
+训练完成后验证/测试命令：
+
+```bash
+python scripts/evaluate.py \
+  --config runs/swin_stereo_sr_x2_bipam_300/config.json \
+  --checkpoint runs/swin_stereo_sr_x2_bipam_300/best.pt \
+  --device cuda:0 \
+  --output runs/swin_stereo_sr_x2_bipam_300/eval_results.json
+
+python scripts/evaluate.py \
+  --config runs/swin_stereo_sr_x4_bipam_300/config.json \
+  --checkpoint runs/swin_stereo_sr_x4_bipam_300/best.pt \
+  --device cuda:0 \
+  --output runs/swin_stereo_sr_x4_bipam_300/eval_results.json
+```

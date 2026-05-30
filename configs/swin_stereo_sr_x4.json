@@ -32,8 +32,22 @@
     "name": "swin_stereo_sr",
     "scale": 4,
     "embed_dim": 60,
-    "depths": [6, 6, 6, 6, 6, 6],
-    "num_heads": [6, 6, 6, 6, 6, 6],
+    "depths": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "num_heads": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
     "window_size": 8,
     "mlp_ratio": 2.0,
     "max_disp": 0,
@@ -46,24 +60,36 @@
     "l1_weight": 1.0,
     "ffl_weight": 0.05,
     "ffl_alpha": 1.0,
-    "attn_smooth_weight": 0.001
+    "attn_smooth_weight": 0.0,
+    "stereo_weight": 0.1,
+    "consistency_weight": 0.1
   },
   "train": {
-    "epochs": 50,
+    "epochs": 300,
     "batch_size": 16,
     "lr": 0.0002,
     "eta_min": 1e-06,
     "weight_decay": 0.0,
-    "betas": [0.9, 0.999],
+    "betas": [
+      0.9,
+      0.999
+    ],
     "amp": true,
     "clip_grad_norm": 1.0,
     "log_every": 20,
     "save_every": 1,
     "validate_every": 1,
-    "run_mode": "train"
+    "run_mode": "train",
+    "max_disp_schedule": {
+      "enabled": true,
+      "start": 10,
+      "finite_end": 24,
+      "end": 0,
+      "warmup_epochs": 100
+    }
   },
   "runtime": {
     "device": "cuda",
-    "output_dir": "runs/swin_stereo_sr_x4"
+    "output_dir": "runs/swin_stereo_sr_x4_bipam_300"
   }
 }
