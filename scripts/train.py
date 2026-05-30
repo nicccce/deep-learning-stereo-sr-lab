@@ -125,13 +125,13 @@ def main() -> None:
     if run_mode == "overfit":
         config["data"]["limit_train"] = train_cfg["batch_size"]
         config["data"]["augment"] = False
-        print("run mode: overfit one fixed training batch")
+        print("run mode: overfit one fixed training batch", flush=True)
     else:
-        print("run mode: train")
+        print("run mode: train", flush=True)
     save_json(config, out_dir / "config.json")
 
     train_pairs, val_pairs = make_train_val_pairs(config)
-    print(f"data pairs: train={len(train_pairs)} val={len(val_pairs)}")
+    print(f"data pairs: train={len(train_pairs)} val={len(val_pairs)}", flush=True)
     train_loader = make_loader(config, "train", shuffle=run_mode != "overfit", device=device, pairs=train_pairs)
     val_loader = train_loader if run_mode == "overfit" else make_loader(
         config,
@@ -153,7 +153,7 @@ def main() -> None:
             pairs=train_pairs,
         )
     model = create_model(config).to(device)
-    print(f"model parameters: {count_parameters(model) / 1e6:.3f} M")
+    print(f"model parameters: {count_parameters(model) / 1e6:.3f} M", flush=True)
 
     loss_cfg = config.get("loss", {})
     criterion = StereoSRLoss(**loss_cfg)
@@ -196,7 +196,8 @@ def main() -> None:
             record["train_eval"] = train_eval_stats
             print(
                 f"epoch {epoch:03d} train_eval | "
-                f"PSNR={train_eval_stats['psnr']:.3f} SSIM={train_eval_stats['ssim']:.4f}"
+                f"PSNR={train_eval_stats['psnr']:.3f} SSIM={train_eval_stats['ssim']:.4f}",
+                flush=True
             )
 
         if epoch % train_cfg.get("validate_every", 1) == 0:
@@ -208,7 +209,7 @@ def main() -> None:
                 amp=train_cfg.get("amp", False),
             )
             record["val"] = val_stats
-            print(f"epoch {epoch:03d} val | PSNR={val_stats['psnr']:.3f} SSIM={val_stats['ssim']:.4f}")
+            print(f"epoch {epoch:03d} val | PSNR={val_stats['psnr']:.3f} SSIM={val_stats['ssim']:.4f}", flush=True)
             if val_stats["psnr"] > best_psnr:
                 best_psnr = val_stats["psnr"]
                 save_checkpoint(out_dir / "best.pt", model, optimizer, scheduler, epoch, best_psnr, config)

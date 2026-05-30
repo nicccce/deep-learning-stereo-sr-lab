@@ -47,7 +47,7 @@ def train_one_epoch(model, loader, criterion, optimizer, scaler, device, epoch: 
 
         if step % log_every == 0:
             message = ", ".join(f"{key}={meter.avg:.4f}" for key, meter in meters.items())
-            print(f"epoch {epoch:03d} step {step:04d}/{len(loader)} | {message}")
+            print(f"epoch {epoch:03d} step {step:04d}/{len(loader)} | {message}", flush=True)
 
     return {key: meter.avg for key, meter in meters.items()}
 
