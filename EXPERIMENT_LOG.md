@@ -751,3 +751,87 @@ python scripts/evaluate.py \
   --device cuda:0 \
   --output runs/swin_stereo_sr_x4_bipam_300/eval_results.json
 ```
+
+
+## 2026-05-31 SwinStereoSRNet x2：biPAM + 几何损失 300 epoch 结果
+
+### 结果来源
+
+远端目录：`~/dl-lab/deep-learning-stereo-sr-lab/runs/swin_stereo_sr_x2_bipam_300`。
+
+已从远端同步回本机的轻量结果文件：
+
+- `runs/swin_stereo_sr_x2_bipam_300/config.json`
+- `runs/swin_stereo_sr_x2_bipam_300/history.json`
+- `runs/swin_stereo_sr_x2_bipam_300/eval_results.json`
+
+说明：本次只拉取 JSON 结果文件用于分析和归档，未拉取 `best.pt/latest.pt` checkpoint。
+
+### 配置摘要
+
+| 项目 | 值 |
+|---|---:|
+| Model | `SwinStereoSRNet` |
+| Scale | x2 |
+| Epochs | 300 |
+| Batch size | 16 |
+| Params | 1,607,283 |
+| Optimizer | AdamW, `lr=2e-4`, CosineAnnealingLR, `eta_min=1e-6` |
+| AMP | true |
+| Loss | `loss_SR + 0.1 * loss_cons + 0.1 * (loss_photo + loss_smooth + loss_cycle)`，其中 `loss_SR` 保留 L1 + `0.05 * FFL` |
+| max_disp schedule | epoch 1 从 10 开始，epoch 100 切到 `0`（全行搜索） |
+
+### 训练曲线关键节点
+
+| Epoch | max_disp | Train total | Train SR | Photo | Smooth | Cycle | Cons | Val PSNR | Val SSIM |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 10 | 0.098645 | 0.085381 | 0.048381 | 0.002214 | 0.034665 | 0.047381 | 24.6607 | 0.7805 |
+| 10 | 13 | 0.079968 | 0.067600 | 0.045129 | 0.001309 | 0.033969 | 0.043272 | 25.3177 | 0.8171 |
+| 50 | 29 | 0.064063 | 0.056277 | 0.028762 | 0.001063 | 0.024106 | 0.023933 | 26.5874 | 0.8522 |
+| 100 | 0 | 0.061173 | 0.054324 | 0.025922 | 0.000024 | 0.022272 | 0.020271 | 26.9256 | 0.8626 |
+| 150 | 0 | 0.060144 | 0.053368 | 0.025751 | 0.000020 | 0.022170 | 0.019810 | 27.0401 | 0.8668 |
+| 200 | 0 | 0.059399 | 0.052600 | 0.025962 | 0.000018 | 0.022176 | 0.019829 | 27.1991 | 0.8688 |
+| 250 | 0 | 0.056967 | 0.050370 | 0.025344 | 0.000016 | 0.021632 | 0.018976 | 27.2313 | 0.8699 |
+| 300 | 0 | 0.059060 | 0.052290 | 0.025996 | 0.000016 | 0.022203 | 0.019485 | 27.2331 | 0.8701 |
+
+最佳 Validation：
+
+- Best PSNR：epoch 263，`PSNR=27.2396`，`SSIM=0.8700`，`seconds_per_pair=0.3842s`
+- Best SSIM：epoch 266，`PSNR=27.2271`，`SSIM=0.8702`，`seconds_per_pair=0.3857s`
+- Final epoch 300：`PSNR=27.2331`，`SSIM=0.8701`
+
+### KITTI 同协议评估结果
+
+`eval_results.json` 使用配置中的 `test_source`，即 KITTI2012 `training + testing`，共 778 对：
+
+| Metric | Value |
+|---|---:|
+| PSNR | 28.7670 |
+| SSIM | 0.8801 |
+| seconds_per_pair | 0.3702s |
+| parameters | 1,607,283 |
+| num_pairs | 778 |
+
+### 与前序结果对比
+
+| Method | Scale | Epochs | Params | Val PSNR | Val SSIM | KITTI PSNR | KITTI SSIM | Time / pair |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| StereoSRNet CNN baseline | x2 | 50 | 515,524 | 26.2745 | 0.8457 | 28.2818 | 0.8699 | 0.0079s |
+| SwinMonoSRNet ablation | x2 | 50 | 1,567,323 | 26.2955 | 0.8458 | 28.3074 | 0.8704 | 0.3580s |
+| SwinStereoSRNet old PAM | x2 | 50 | ~1.58M | 26.2801 | 0.8454 | 28.2809 | 0.8700 | 0.3677s |
+| iPASSR retrain | x2 | 50 | 1,377,931 | 26.6243 | 0.8550 | 28.4171 | 0.8732 | 0.0196s |
+| **SwinStereoSRNet biPAM + geometry** | **x2** | **300** | **1,607,283** | **27.2396** | **0.8700** | **28.7670** | **0.8801** | **0.3702s** |
+
+相对提升：
+
+- 相比旧 `SwinStereoSRNet` x2：Validation `+0.9595 dB`，KITTI `+0.4861 dB / +0.0101 SSIM`。
+- 相比同协议 iPASSR x2：Validation `+0.6153 dB`，KITTI `+0.3499 dB / +0.0069 SSIM`。
+- 相比单目 Swin 消融：KITTI `+0.4596 dB / +0.0097 SSIM`，说明本次真正的 biPAM + 几何约束开始释放双目收益。
+
+### 观察
+
+1. 前 50 epoch 已达到 `26.5874` Val PSNR，超过旧 Swin x2 50 epoch 的 `26.2801`，说明收益不只是来自长训；biPAM 和几何损失本身确实改善了早期收敛方向。
+2. epoch 100 切到 `max_disp=0` 后，`loss_smooth` 从 `1e-3` 量级降到 `2e-5` 量级，attention map 明显更平滑；Validation 也继续从 `26.9256` 提升到 `27.2396`。
+3. 200 epoch 后进入平台期，best PSNR 出现在 epoch 263，epoch 300 与 best 仅差约 `0.0065 dB`，训练后期稳定，没有明显过拟合崩塌。
+4. 推理速度仍是最大代价：`0.3702s/pair`，明显慢于 CNN 和 iPASSR。这主要来自 Swin/RSTB 窗口注意力，而不是 biPAM 参数量。
+5. 这组结果可以支撑报告中的核心结论：旧版本双目模块确实欠约束；补齐 iPASSR/SwiniPASSR 的 biPAM 遮挡建模和立体几何 loss 后，Swin 双目模型在同协议验证与 KITTI 测试上均超过旧 Swin、单目消融和 iPASSR baseline。
