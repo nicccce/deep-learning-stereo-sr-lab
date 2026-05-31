@@ -25,6 +25,8 @@ def create_model(config: dict):
             max_disp=cfg.get("max_disp", 0),
             drop_path_rate=cfg.get("drop_path_rate", 0.1),
             resi_connection=cfg.get("resi_connection", "1conv"),
+            upsampler=cfg.get("upsampler", "pixelshuffle"),
+            pam_downsample=cfg.get("pam_downsample", 1),
             use_checkpoint=cfg.get("use_checkpoint", False),
             img_size=cfg.get("img_size", 48),
         )
@@ -39,6 +41,8 @@ def create_model(config: dict):
             max_disp=cfg.get("max_disp", 0),
             drop_path_rate=cfg.get("drop_path_rate", 0.1),
             resi_connection=cfg.get("resi_connection", "1conv"),
+            upsampler=cfg.get("upsampler", "pixelshuffle"),
+            pam_downsample=cfg.get("pam_downsample", 1),
             use_checkpoint=cfg.get("use_checkpoint", False),
             img_size=cfg.get("img_size", 48),
             fusion_context=cfg.get("fusion_context", "zero"),

@@ -44,6 +44,8 @@ def main() -> None:
             "window_size": 4,
             "mlp_ratio": 2.0,
             "img_size": 16,
+            "upsampler": "pixelshuffledirect",
+            "pam_downsample": 1,
         },
     }
     swin_model = create_model(config_swin)
@@ -69,6 +71,8 @@ def main() -> None:
             "mlp_ratio": 2.0,
             "img_size": 16,
             "fusion_context": "zero",
+            "upsampler": "pixelshuffledirect",
+            "pam_downsample": 1,
         },
     }
     swin_mono_model = create_model(config_swin_mono)

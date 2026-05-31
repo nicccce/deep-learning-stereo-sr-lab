@@ -52,3 +52,17 @@ class Upsampler(nn.Module):
     def forward(self, x):
         return self.body(x)
 
+
+class PixelShuffleDirectUpsampler(nn.Module):
+    def __init__(self, scale: int, channels: int, out_channels: int = 3) -> None:
+        super().__init__()
+        if scale < 2:
+            raise ValueError("scale must be >= 2")
+        self.body = nn.Sequential(
+            nn.Conv2d(channels, out_channels * scale * scale, 3, padding=1),
+            nn.PixelShuffle(scale),
+        )
+
+    def forward(self, x):
+        return self.body(x)
+

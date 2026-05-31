@@ -26,6 +26,8 @@ class SwinMonoSRNet(SwinStereoSRNet):
         max_disp: int = 0,
         drop_path_rate: float = 0.1,
         resi_connection: str = "1conv",
+        upsampler: str = "pixelshuffle",
+        pam_downsample: int = 1,
         use_checkpoint: bool = False,
         img_size: int = 48,
         fusion_context: str = "zero",
@@ -40,6 +42,8 @@ class SwinMonoSRNet(SwinStereoSRNet):
             max_disp=max_disp,
             drop_path_rate=drop_path_rate,
             resi_connection=resi_connection,
+            upsampler=upsampler,
+            pam_downsample=pam_downsample,
             use_checkpoint=use_checkpoint,
             img_size=img_size,
         )

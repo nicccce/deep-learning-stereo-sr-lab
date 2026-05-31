@@ -27,7 +27,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .blocks import Upsampler
+from .blocks import PixelShuffleDirectUpsampler, Upsampler
 from .parallax_attention import ParallaxAttention
 from .swin_blocks import RSTB, PatchEmbed, PatchUnEmbed, trunc_normal_
 
@@ -50,6 +50,10 @@ class SwinStereoSRNet(nn.Module):
                          across all STL layers).
         resi_connection: ``"1conv"`` (single 3×3) or ``"3conv"`` (bottleneck)
                          inside each RSTB.
+        upsampler:       ``"pixelshuffle"`` for the original cascaded upsampler,
+                         or ``"pixelshuffledirect"`` for a single direct head.
+        pam_downsample:  biPAM spatial downsample factor. Only ``1`` is
+                         implemented in the first-priority light model.
         use_checkpoint:  Trade compute for memory via gradient checkpointing.
         img_size:        Nominal LR spatial size for pre-computing attention masks
                          (does **not** restrict actual input size).
@@ -66,6 +70,8 @@ class SwinStereoSRNet(nn.Module):
         max_disp: int = 0,
         drop_path_rate: float = 0.1,
         resi_connection: str = "1conv",
+        upsampler: str = "pixelshuffle",
+        pam_downsample: int = 1,
         use_checkpoint: bool = False,
         img_size: int = 48,
     ) -> None:
@@ -80,6 +86,8 @@ class SwinStereoSRNet(nn.Module):
             f"len(depths) must be ≥ 2 and even, got {num_rstb}")
         assert len(num_heads) == num_rstb
         half = num_rstb // 2
+        if pam_downsample != 1:
+            raise NotImplementedError("pam_downsample > 1 belongs to the second-priority ablation.")
 
         self.scale = scale
         self.window_size = window_size
@@ -160,7 +168,13 @@ class SwinStereoSRNet(nn.Module):
         # =====================================================================
         # 5. Upsampler (PixelShuffle + final 3×3 conv → 3 channels)
         # =====================================================================
-        self.upsampler = Upsampler(scale, embed_dim, out_channels=3)
+        upsampler = upsampler.lower()
+        if upsampler in {"pixelshuffledirect", "direct"}:
+            self.upsampler = PixelShuffleDirectUpsampler(scale, embed_dim, out_channels=3)
+        elif upsampler in {"pixelshuffle", "cascaded"}:
+            self.upsampler = Upsampler(scale, embed_dim, out_channels=3)
+        else:
+            raise ValueError(f"Unsupported upsampler: {upsampler}")
 
         # =====================================================================
         # Weight initialisation
